@@ -1,11 +1,10 @@
-#!/home/hydro-service/miniconda3/envs/irods/bin/python
-
 import os
+import dotenv
 import logging
 import time
 import textwrap
 import argparse
-import stats
+import stat
 import glob
 import pathlib
 import datetime
@@ -14,8 +13,6 @@ import subprocess
 from irods.session import iRODSSession
 from irods.meta import iRODSMeta
 
-LOG_FILE = "/path/to/log/file.log"
-IRODS_ENV_FILE = "/home/some_os_user/.irods/some_irods_environment.json"
 RESOURCE_ID_GLOB = "????????????????????????????????"
 EXCLUDED = ["bags", "temp", "zips"]
 IS_PUBLIC_KEY = "isPublic"
@@ -23,12 +20,6 @@ IS_PUBLIC_VALUE = "true"
 NETCDF_EXTENSION = ".nc"
 FILE_MODE = stat.S_IRWXU | stat.S_IRGRP | stat.S_IXGRP | stat.S_IROTH | stat.S_IXOTH
 
-logging.basicConfig(filename=LOG_FILE,
-                    # Available in Python 3.9+
-                    # encoding="utf-8",
-                    level=logging.INFO,
-                    format="[%(asctime)s] [%(levelname)s] %(message)s",
-                    datefmt="%m/%d/%Y %I:%M:%S %p")
 logger = logging.getLogger(__name__)
 
 
@@ -60,13 +51,14 @@ def rchmod(path, mode):
     return None
 
 
-def get_latest_resource_timestamp(collection_path):
+def get_latest_resource_timestamp(irods_env, collection_path):
     """
     Return the latest modifcation time among the collection's data objects.
 
     get_latest_resource_timestamp(collection_path) -> <datetime.datetime>
 
     Where:
+        irods_env:    <str> Absolute path to the iRODS environment file
         collection_path: <str> Absolute iRODS path to the collection
 
     Returns: <datetime.datetime> The latest modification time
@@ -75,7 +67,7 @@ def get_latest_resource_timestamp(collection_path):
     whenever a contained data object is modified.
     """
 
-    with iRODSSession(irods_env_file=IRODS_ENV_FILE) as session:
+    with iRODSSession(irods_env_file=irods_env) as session:
         collection = session.collections.get(collection_path)
         tree = [leaf for leaf in collection.walk()]
         data_objects = []
@@ -87,13 +79,14 @@ def get_latest_resource_timestamp(collection_path):
     return timestamp
 
 
-def publish_resource(proxy_path, catalog_path, resource_id):
+def publish_resource(irods_env, proxy_path, catalog_path, resource_id):
     """
     Copy the resource with its timestamp.
 
     publish_resource(proxy_path, catalog_path, resource_id) -> None
 
     Where:
+        irods_env:    <str> Absolute path to the iRODS environment file
         proxy_path:   <str> Absolute iRODS proxy path to Hydroshare resources
         catalog_path: <str> Absolute THREDDS catalog path to publish resources
         resource_id:  <str> Resource ID to publish
@@ -106,9 +99,9 @@ def publish_resource(proxy_path, catalog_path, resource_id):
     source = os.path.join(proxy_path, resource_id)
     destination = os.path.join(catalog_path, resource_id)
 
-    timestamp = get_latest_resource_timestamp(source)
+    timestamp = get_latest_resource_timestamp(irods_env, source)
 
-    proc = subprocess.Popen(["env", f"IRODS_ENVIRONMENT_FILE={IRODS_ENV_FILE}", "iget", "-rf", source, destination],
+    proc = subprocess.Popen(["env", f"IRODS_ENVIRONMENT_FILE={irods_env}", "iget", "-rf", source, destination],
                             stdout=subprocess.PIPE,
                             stderr=subprocess.PIPE)
     stdout, stderr = proc.communicate()
@@ -127,13 +120,14 @@ def publish_resource(proxy_path, catalog_path, resource_id):
     return None
 
 
-def scan_source(proxy_path):
+def scan_source(irods_env, proxy_path):
     """
     Scan the iRODS proxy path for all public Hydroshare resources containing NetCDF and their timestamps.
 
-    scan_source(proxy_path) -> [(resource_id, timestamp), ...]
+    scan_source(irods_env, proxy_path) -> [(resource_id, timestamp), ...]
 
     Where:
+        irods_env:    <str> Absolute path to the iRODS environment file
         proxy_path:   <str> Absolute iRODS proxy path to Hydroshare resources
 
     Returns: <list> of two-<tuple>s where:
@@ -141,7 +135,7 @@ def scan_source(proxy_path):
         b) second element is a <datetime.datetime> modification time.
     """
 
-    with iRODSSession(irods_env_file=IRODS_ENV_FILE) as session:
+    with iRODSSession(irods_env_file=irods_env) as session:
         subcollections = session.collections.get(proxy_path).subcollections
         subcollections = [subcollection for subcollection in subcollections if subcollection.name not in EXCLUDED]
         logger.info(f"Number of included subcollections: {len(subcollections)}")
@@ -164,7 +158,8 @@ def scan_source(proxy_path):
                 logger.info(f"Subcollection name: {subcollection.name}; Number of NetCDF data objects in subcollection: {len(netcdf_objects)}")
         logger.info(f"Number of public subcollections containing NetCDF: {len(public_netcdf)}")
 
-    source_netcdf = [(resource_id, get_latest_resource_timestamp(os.path.join(proxy_path, resource_id))) for resource_id in public_netcdf]
+    source_netcdf = [(resource_id, get_latest_resource_timestamp(irods_env, os.path.join(proxy_path, resource_id)))
+                     for resource_id in public_netcdf]
     return source_netcdf
 
 
@@ -205,13 +200,14 @@ def remove_resource(catalog_path, resource_id):
     return None
 
 
-def sync_resources(proxy_path, catalog_path):
+def sync_resources(irods_env, proxy_path, catalog_path):
     """
     Sync public netcdf resources between iRODS proxy and THREDDS catalog.
 
-    sync_resource(proxy_path, catalog_path) -> None
+    sync_resource(irods_env, proxy_path, catalog_path) -> None
 
     Where:
+        irods_env:    <str> Absolute path to the iRODS environment file
         proxy_path:   <str> Absolute iRODS proxy path to Hydroshare resources
         catalog_path: <str> Absolute THREDDS catalog path to publish resources
 
@@ -225,7 +221,7 @@ def sync_resources(proxy_path, catalog_path):
 
     logger.info(f"Syncing resources from {proxy_path} to {catalog_path}")
     start_time = time.perf_counter()
-    source_netcdf = scan_source(proxy_path)
+    source_netcdf = scan_source(irods_env, proxy_path)
     destination_netcdf = scan_destination(catalog_path)
     destination_ids = [destination[0] for destination in destination_netcdf]
     destination_timestamps = [destination[1] for destination in destination_netcdf]
@@ -233,13 +229,13 @@ def sync_resources(proxy_path, catalog_path):
         try:
             if source_id not in destination_ids:
                 logger.info(f"Resource ID: {source_id} not in destination")
-                publish_resource(proxy_path, catalog_path, source_id)
+                publish_resource(irods_env, proxy_path, catalog_path, source_id)
             else:
                 index = destination_ids.index(source_id)
                 destination_timestamp = destination_timestamps[index]
                 if source_timestamp > destination_timestamp:
                     logger.info(f"Resource ID: {source_id} source timestamp: {source_timestamp} > destination timestamp: {destination_timestamp}")
-                    publish_resource(proxy_path, catalog_path, source_id)
+                    publish_resource(irods_env, proxy_path, catalog_path, source_id)
         except NetCDFPublicationError as e:
             logger.warning(f"Syncing resources from {proxy_path} to {catalog_path} incomplete")
     destination_netcdf = scan_destination(catalog_path)
@@ -267,10 +263,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Publish public Hydroshare resources containing NetCDF.",
                                      epilog=textwrap.dedent(epilog),
                                      formatter_class=argparse.RawTextHelpFormatter)
-    parser.add_argument("src_path",
-                        help="Absolute iRODS proxy path to Hydroshare resources.")
-    parser.add_argument("dest_path",
-                        help="Absolute THREDDS catalog path to Hydroshare resources.")
+    parser.add_argument("dotenv_path",
+                        help="Absolute path to the .env file.")
     parser.add_argument("resource_id",
                         nargs="?",
                         default="",
@@ -278,10 +272,30 @@ if __name__ == "__main__":
                                              Optional resource ID to publish.
                                              If not specified, publish all public Hydroshare resources containing NetCDF."""))
     args = parser.parse_args()
+
+    dotenv.load_dotenv(dotenv.find_dotenv(args.dotenv_path))
+    log_file = os.environ["PUBLIC_NETCDF_LOG_FILE"]
+    irods_env = os.environ["PUBLIC_NETCDF_IRODS_ENVIRONMENT_FILE"]
+    proxy_path = os.environ["PUBLIC_NETCDF_IRODS_PROXY_PATH"]
+    catalog_path = os.environ['PUBLIC_NETCDF_THREDDS_CATALOG_PATH']
+
+    logging.basicConfig(filename=log_file,
+                        # Available in Python 3.9+
+                        # encoding="utf-8",
+                        level=logging.INFO,
+                        format="[%(asctime)s] [%(levelname)s] %(message)s",
+                        datefmt="%m/%d/%Y %I:%M:%S %p")
+    logger = logging.getLogger(__name__)
+
     if args.resource_id:
         try:
-            publish_resource(args.src_path, args.dest_path, args.resource_id)
+            publish_resource(irods_env,
+                             proxy_path,
+                             catalog_path,
+                             args.resource_id)
         except NetCDFPublicationError as e:
             logger.warning(f"Publishing resource {args.resource_id} from {args.src_path} to {args.dest_path} incomplete")
     else:
-        sync_resources(args.src_path, args.dest_path)
+        sync_resources(irods_env,
+                       proxy_path,
+                       catalog_path)
