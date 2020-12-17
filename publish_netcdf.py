@@ -1,5 +1,3 @@
-#!/home/hydro-service/miniconda3/envs/irods/bin/python
-
 import os
 import dotenv
 import logging
