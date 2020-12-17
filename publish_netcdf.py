@@ -1,3 +1,5 @@
+#!/home/hydro-service/miniconda3/envs/irods/bin/python
+
 import os
 import dotenv
 import logging
@@ -38,7 +40,7 @@ def rchmod(path, mode):
     rchmod(path, mode) -> None
 
     Where:
-        path: <str> path to change filesystems permissions
+        path: <str> Absolute path to change filesystems permissions
         mode: <int> numeric mode for all changes consistent with constants in the stats library
     """
 
@@ -48,6 +50,38 @@ def rchmod(path, mode):
             os.chmod(os.path.join(root, d), mode)
         for f in files:
             os.chmod(os.path.join(root, f), mode)
+    return None
+
+
+def replace_spaces_in_names(path):
+    """
+    Recursively replace spaces in names of all of the children underneath a path.'
+
+    replace_spaces_in_names(path) -> None
+
+    Where:
+        path: <str> Absolute path to traverse with name fixes
+
+    This is a fix for a bug in TDS 5 which was already fixed in TDS 4 but has regressed.
+    When a fix is available in TDS 5 and then deployed, this function may be deprecated.
+    """
+
+    replaced = 0
+    walk = list(os.walk(path))
+    walk.reverse()
+    for root, dirs, files in walk:
+        for f in files:
+            if " " in f:
+                os.rename(os.path.join(root, f), os.path.join(root, f.replace(" ", "_")))
+                replaced += 1
+        for d in dirs:
+            if " " in d:
+                os.rename(os.path.join(root, d), os.path.join(root, d.replace(" ", "_")))
+                replaced += 1
+    if replaced:
+        logger.warning(f"Replaced {replaced} name{'s' if replaced != 1 else ''} " \
+                       f"of {'a ' if replaced == 1 else ''}child{'ren' if replaced != 1 else ''} " \
+                       f"in destination path {path}")
     return None
 
 
@@ -115,6 +149,8 @@ def publish_resource(irods_env, proxy_path, catalog_path, resource_id):
                                      stdout,
                                      stderr)
     rchmod(destination, FILE_MODE)
+    # Fix for TDS 5. Hope to see a fix for this in TDS 5 itself.
+    replace_spaces_in_names(destination)
     os.utime(destination, (timestamp.timestamp(), timestamp.timestamp()))
     logger.info(f"Published resource ID: {resource_id} from {proxy_path} to {catalog_path} with timestamp: {timestamp}")
     return None
