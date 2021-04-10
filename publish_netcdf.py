@@ -62,6 +62,9 @@ def replace_spaces_in_names(path):
 
     This is a fix for a bug in TDS 5 which was already fixed in TDS 4 but has regressed.
     When a fix is available in TDS 5 and then deployed, this function may be deprecated.
+
+    Spaces are replaced with dunders as cases have been encountered where replacing
+    with a single underscore resulted in a name collision.
     """
 
     replaced = 0
@@ -95,7 +98,7 @@ def get_latest_resource_timestamp(irods_env, collection_path):
 
     Returns: <datetime.datetime> The latest modification time
 
-    This function should become deprecated with iRODS 4.2.9 which updates collection moofication times
+    This function should become deprecated with iRODS 4.2.9 which updates collection modification times
     whenever a contained data object is modified.
     """
 
@@ -133,14 +136,15 @@ def publish_resource(irods_env, proxy_path, catalog_path, resource_id):
 
     timestamp = get_latest_resource_timestamp(irods_env, source)
 
-    proc = subprocess.Popen(["env", f"IRODS_ENVIRONMENT_FILE={irods_env}", "iget", "-rf", source, destination],
+    # The iget destination is the catalog path in light of https://github.com/irods/irods/issues/5527
+    proc = subprocess.Popen(["env", f"IRODS_ENVIRONMENT_FILE={irods_env}", "iget", "-rf", source, catalog_path],
                             stdout=subprocess.PIPE,
                             stderr=subprocess.PIPE)
     stdout, stderr = proc.communicate()
     if proc.returncode:
         logger.error(f"Publishing resource ID: {resource_id} from {proxy_path} to {catalog_path} failed:" \
-                     f"return code: {proc.returncode} :::" \
-                     f'stdout: {stdout} :::' \
+                     f"return code: {proc.returncode} ::: " \
+                     f'stdout: {stdout} ::: ' \
                      f"stderr: {stderr}")
         raise NetCDFPublicationError(f"iget {source} to {destination} failed",
                                      proc.returncode,
@@ -177,12 +181,12 @@ def scan_source(irods_env, proxy_path):
         public = [subcollection for subcollection in subcollections
                   if "isPublic" in subcollection.metadata.keys()
                   and subcollection.metadata[IS_PUBLIC_KEY].value == IS_PUBLIC_VALUE]
-        logger.info(f"Nuber of public included subcollections: {len(public)}")
+        logger.info(f"Number of public included subcollections: {len(public)}")
 
         public_netcdf = []
         for subcollection in public:
             public_objects = [objs for col, subcol, objs in list(subcollection.walk())]
-            # flatten ths list of lists of data objects
+            # flatten the list of lists of data objects
             data_objects = []
             for objs in public_objects:
                 data_objects.extend(objs)
