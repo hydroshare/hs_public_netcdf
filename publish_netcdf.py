@@ -17,7 +17,7 @@ RESOURCE_ID_GLOB = "????????????????????????????????"
 EXCLUDED = ["bags", "temp", "zips"]
 IS_PUBLIC_KEY = "isPublic"
 IS_PUBLIC_VALUE = "true"
-NETCDF_EXTENSION = ".nc"
+NETCDF_EXTENSIONS = [".nc", ".nc4"]
 FILE_MODE = stat.S_IRWXU | stat.S_IRGRP | stat.S_IXGRP | stat.S_IROTH | stat.S_IXOTH
 
 logger = logging.getLogger(__name__)
@@ -180,7 +180,7 @@ def scan_source(irods_env, proxy_path):
 
         public = [subcollection for subcollection in subcollections
                   if "isPublic" in subcollection.metadata.keys()
-                  and subcollection.metadata[IS_PUBLIC_KEY].value == IS_PUBLIC_VALUE]
+                  and subcollection.metadata[IS_PUBLIC_KEY].value.lower() == IS_PUBLIC_VALUE]
         logger.info(f"Number of public included subcollections: {len(public)}")
 
         public_netcdf = []
@@ -190,7 +190,7 @@ def scan_source(irods_env, proxy_path):
             data_objects = []
             for objs in public_objects:
                 data_objects.extend(objs)
-            netcdf_objects = [obj for obj in data_objects if obj.name.lower().endswith(NETCDF_EXTENSION)]
+            netcdf_objects = [obj for obj in data_objects if pathlib.Path(obj.name).suffix.lower() in NETCDF_EXTENSIONS]
             if netcdf_objects:
                 public_netcdf.append(subcollection.name)
                 logger.info(f"Subcollection name: {subcollection.name}; Number of NetCDF data objects in subcollection: {len(netcdf_objects)}")
