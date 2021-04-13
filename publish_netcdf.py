@@ -73,11 +73,17 @@ def replace_spaces_in_names(path):
     for root, dirs, files in walk:
         for f in files:
             if " " in f:
-                os.rename(os.path.join(root, f), os.path.join(root, f.replace(" ", "__")))
+                replacement = os.path.join(root, f.replace(" ", "__"))
+                if pathlib.Path(replacement).exists():
+                    os.remove(replacement)
+                os.rename(os.path.join(root, f), replacement)
                 replaced += 1
         for d in dirs:
             if " " in d:
-                os.rename(os.path.join(root, d), os.path.join(root, d.replace(" ", "__")))
+                replacement = os.path.join(root, d.replace(" ", "__"))
+                if pathlib.Path(replacement).exists():
+                    shutil.rmtree(replacement)
+                os.rename(os.path.join(root, d), replacement)
                 replaced += 1
     if replaced:
         logger.warning(f"Replaced {replaced} name{'s' if replaced != 1 else ''} " \
